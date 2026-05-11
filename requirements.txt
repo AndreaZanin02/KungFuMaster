@@ -1,6 +1,13 @@
 # Environment
 gymnasium[atari,accept-rom-license]>=0.29.0
+ale-py>=0.11.0
 
 # Libraries
 numpy>=1.24.0,<2.0.0  #numpy 2.0 could have conflicts
 torch>=2.0.0
+matplotlib>=3.7.0
+pandas>=2.0.0
+
+# Preprocessing & video recording
+opencv-python-headless>=4.0.0
+moviepy>=2.0.0
