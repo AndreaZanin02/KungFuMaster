@@ -8,13 +8,23 @@ import torch
 
 gym.register_envs(ale_py)
 
+# Seed all RNGs for reproducibility
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+# --------------- This version of KungFuMasterRewardShaper doesn't implement walking reward ---------------
 """
     Personalized wrapper for Reward Shaping
     - Reward Scaling: transforms the points (50, 100, 2000) in useful values (0.5, 1.0, 20.0).
     - Death Penalty: strong signal of error if the character is hitten
 """
 
-# --------------- This version of KungFuMasterRewardShaper doesn't implement walking reward ---------------
 """
 class KungFuMasterRewardShaper(gym.Wrapper):
 
