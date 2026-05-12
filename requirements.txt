@@ -11,3 +11,6 @@ pandas>=2.0.0
 # Preprocessing & video recording
 opencv-python-headless>=4.0.0
 moviepy>=2.0.0
+
+# Reinforcement Learning
+stable-baselines3>=2.4.0
