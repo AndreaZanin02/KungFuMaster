@@ -25,6 +25,8 @@ checkpoints/
 *.pth
 *.pt
 *.h5
+# Training run outputs (logs, models, videos)
+runs/
 
 # Ignore logs and visualization data
 logs/
