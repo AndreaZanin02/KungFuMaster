@@ -11,25 +11,38 @@ from agent import DQNAgent
 from utils import get_device, make_eval_env, set_seed
 
 
-def evaluate(agent: DQNAgent, env: gym.Env, n_episodes: int) -> list[float]:
-    """Run n_episodes with greedy policy, return list of episode rewards."""
-    rewards = []
+def evaluate(agent: DQNAgent, env: gym.Env, n_episodes: int) -> list[dict]:
+    """Run n_episodes with greedy policy, return per-episode metrics."""
+    episodes = []
 
     for i in range(n_episodes):
         obs, _ = env.reset()
         episode_reward = 0.0
+        episode_length = 0
+        actions_taken = []
         done = False
 
         while not done:
             action = agent.select_action(np.array(obs), epsilon=0.0)
-            obs, reward, terminated, truncated, _ = env.step(action)
+            actions_taken.append(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             episode_reward += reward
+            episode_length += 1
             done = terminated or truncated
 
-        rewards.append(episode_reward)
-        print(f"  Episode {i + 1}/{n_episodes}: reward = {episode_reward:.1f}")
+        # Count action distribution to understand agent behavior
+        action_counts = {}
+        for a in actions_taken:
+            action_counts[a] = action_counts.get(a, 0) + 1
 
-    return rewards
+        episodes.append({
+            "reward": episode_reward,
+            "length": episode_length,
+            "action_distribution": action_counts,
+        })
+        print(f"  Episode {i + 1}/{n_episodes}: reward = {episode_reward:.1f}, length = {episode_length}")
+
+    return episodes
 
 
 def main() -> None:
@@ -70,14 +83,37 @@ def main() -> None:
     agent.load(model_path)
     agent.policy_net.eval()
 
+    # Get action names from the environment
+    action_meanings = env.unwrapped.get_action_meanings()
+
     print(f"Evaluating {model_path} | {args.episodes} episodes | seed={args.seed}")
 
-    rewards = evaluate(agent, env, args.episodes)
+    episodes = evaluate(agent, env, args.episodes)
     env.close()
+
+    rewards = [ep["reward"] for ep in episodes]
+    lengths = [ep["length"] for ep in episodes]
 
     mean_r = float(np.mean(rewards))
     std_r = float(np.std(rewards))
-    print(f"\nResults: {mean_r:.1f} +/- {std_r:.1f} (min={min(rewards):.1f}, max={max(rewards):.1f})")
+    mean_len = float(np.mean(lengths))
+    std_len = float(np.std(lengths))
+
+    print(f"\nReward:  {mean_r:.1f} +/- {std_r:.1f} (min={min(rewards):.1f}, max={max(rewards):.1f})")
+    print(f"Length:  {mean_len:.1f} +/- {std_len:.1f} (min={min(lengths)}, max={max(lengths)})")
+
+    # Aggregate action distribution across all episodes
+    total_actions: dict[int, int] = {}
+    total_steps = sum(lengths)
+    for ep in episodes:
+        for action_idx, count in ep["action_distribution"].items():
+            total_actions[int(action_idx)] = total_actions.get(int(action_idx), 0) + count
+
+    print("\nAction distribution:")
+    for action_idx in sorted(total_actions.keys()):
+        name = action_meanings[action_idx] if action_idx < len(action_meanings) else f"ACTION_{action_idx}"
+        pct = 100.0 * total_actions[action_idx] / total_steps
+        print(f"  {action_idx:>2d} {name:<20s}: {pct:5.1f}%")
 
     # Save results
     results_path = run_dir / "eval_results.json"
@@ -89,11 +125,18 @@ def main() -> None:
         "std_reward": std_r,
         "min_reward": min(rewards),
         "max_reward": max(rewards),
-        "all_rewards": rewards,
+        "mean_length": mean_len,
+        "std_length": std_len,
+        "action_distribution": {
+            action_meanings[int(k)] if int(k) < len(action_meanings) else f"ACTION_{k}": v
+            for k, v in sorted(total_actions.items())
+        },
+        "total_steps": total_steps,
+        "per_episode": episodes,
     }
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"Results saved to {results_path}")
+    print(f"\nResults saved to {results_path}")
 
 
 def parse_args() -> argparse.Namespace:
