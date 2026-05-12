@@ -74,7 +74,7 @@ class DQNAgent:
     """DQN agent with target network and epsilon-greedy action selection."""
 
     def __init__(self, action_dim: int, device: torch.device, input_channels: int = 4,
-                 lr: float = 1e-4, gamma: float = 0.99, batch_size: int = 32) -> None:
+                lr: float = 1e-4, gamma: float = 0.99, batch_size: int = 32) -> None:
         self.action_dim = action_dim
         self.device = device
         self.gamma = gamma
@@ -131,11 +131,11 @@ class DQNAgent:
         return loss.item()
 
     def update_target_network(self) -> None:
-        """Copy weights from policy network to target network."""
+        # Copy weights from policy network to target network
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def save(self, path: Path) -> None:
-        """Save agent state to disk."""
+        # Save agent state to disk
         torch.save({
             "policy_net": self.policy_net.state_dict(),
             "target_net": self.target_net.state_dict(),
@@ -143,7 +143,7 @@ class DQNAgent:
         }, path)
 
     def load(self, path: Path) -> None:
-        """Load agent state from disk."""
+        # Load agent state from disk
         checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         self.policy_net.load_state_dict(checkpoint["policy_net"])
         self.target_net.load_state_dict(checkpoint["target_net"])

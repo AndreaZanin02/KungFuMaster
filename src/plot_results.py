@@ -9,7 +9,7 @@ import pandas as pd
 
 
 def smooth(values: np.ndarray, window: int = 10) -> np.ndarray:
-    """Simple moving average for smoother curves."""
+    # Simple moving average for smoother curves
     if len(values) < window:
         return values
     kernel = np.ones(window) / window
@@ -17,8 +17,8 @@ def smooth(values: np.ndarray, window: int = 10) -> np.ndarray:
 
 
 def plot_single_seed(csv_path: Path, ax: plt.Axes, label: str, color: str,
-                     window: int = 10) -> None:
-    """Plot episode rewards from a single seed's metrics.csv."""
+                    window: int = 10) -> None:
+    Plot episode rewards from a single seed's metrics.csv
     df = pd.read_csv(csv_path)
     rewards = df["episode_reward"].values
     steps = df["step"].values
@@ -35,7 +35,7 @@ def plot_single_seed(csv_path: Path, ax: plt.Axes, label: str, color: str,
 
 def plot_multi_seed(run_dirs: list[Path], algorithm: str, ax: plt.Axes, color: str,
                     window: int = 10) -> None:
-    """Plot mean +/- std reward across multiple seeds for one algorithm."""
+    Plot mean +/- std reward across multiple seeds for one algorithm
     all_rewards = []
     min_len = float("inf")
 
@@ -86,7 +86,7 @@ def main() -> None:
 
         if len(run_dirs) == 1:
             plot_single_seed(run_dirs[0] / "metrics.csv", ax, label=algorithm.upper(), color=color,
-                             window=args.window)
+                            window=args.window)
         else:
             plot_multi_seed(run_dirs, algorithm.upper(), ax, color=color, window=args.window)
 

@@ -90,39 +90,38 @@ def train(cfg: DQNConfig, seed: int) -> None:
     logger = Logger(run_dir, cfg)
 
     obs, _ = env.reset()
-    episode_reward = 0.0
+    episode_shaped_reward = 0.0  
+    episode_true_score = 0.0
     episode_length = 0
     episode_count = 0
     learn_steps = 0
-    best_eval_reward = -float("inf")  # any first eval will be a "new best"
+    best_eval_reward = -float("inf")
     start_time = time.time()
 
     for step in range(1, cfg.total_timesteps + 1):
-        # Decide how much to explore at this point in training
         epsilon = get_epsilon(step, cfg)
         action = agent.select_action(np.array(obs), epsilon)
 
-        next_obs, reward, terminated, truncated, _ = env.step(action)
+        # In 'info' there are the original points
+        next_obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
 
-        # Store transition in replay buffer for later learning
         memory.push(np.array(obs), action, reward, np.array(next_obs), done)
 
         obs = next_obs
-        episode_reward += reward
+        
+        # Counters updating
+        episode_shaped_reward += reward
+        episode_true_score += info.get("original_reward", 0.0) 
         episode_length += 1
 
-        # Wait until buffer has enough variety, then learn every train_freq steps
         if step >= cfg.learning_starts and step % cfg.train_freq == 0:
             loss = agent.learn(memory)
             if loss is not None:
                 learn_steps += 1
-
-                # Sync target network periodically to keep TD targets stable
                 if learn_steps % cfg.target_update_freq == 0:
                     agent.update_target_network()
 
-        # When the agent dies, log metrics and reset for the next episode
         if done:
             episode_count += 1
             elapsed = time.time() - start_time
@@ -131,7 +130,7 @@ def train(cfg: DQNConfig, seed: int) -> None:
             logger.log({
                 "step": step,
                 "episode": episode_count,
-                "episode_reward": episode_reward,
+                "episode_reward": episode_true_score,
                 "episode_length": episode_length,
                 "epsilon": round(epsilon, 4),
                 "fps": round(fps, 1),
@@ -141,13 +140,15 @@ def train(cfg: DQNConfig, seed: int) -> None:
                 print(
                     f"Step {step:>8d}/{cfg.total_timesteps} | "
                     f"Ep {episode_count:>4d} | "
-                    f"Reward {episode_reward:>7.1f} | "
+                    f"Score Reale {episode_true_score:>7.0f} | "
+                    f"Reward Rete {episode_shaped_reward:>7.1f} | "
                     f"Eps {epsilon:.3f} | "
                     f"FPS {fps:.0f}"
                 )
 
             obs, _ = env.reset()
-            episode_reward = 0.0
+            episode_shaped_reward = 0.0
+            episode_true_score = 0.0
             episode_length = 0
 
         # Test the agent with no exploration to measure true performance

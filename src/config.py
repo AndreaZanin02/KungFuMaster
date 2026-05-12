@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class EnvConfig:
-    """Shared environment configuration."""
+    # Shared environment configuration
     env_id: str = "ALE/KungFuMaster-v5"
     frame_stack: int = 4
     frame_skip: int = 4  # aka action_repeat
@@ -13,41 +13,30 @@ class EnvConfig:
 
 @dataclass
 class DQNConfig:
-    """DQN hyperparameters — Nature DQN defaults for Atari."""
-    # Training
-    total_timesteps: int = 1_000_000
-    learning_rate: float = 1e-4
+    total_timesteps: int = 2_000_000
+    learning_rate: float = 0.0000625
     gamma: float = 0.99
-    batch_size: int = 32
-    buffer_size: int = 100_000
-    learning_starts: int = 10_000
-    train_freq: int = 4  # learn every N env steps
+    batch_size: int = 128
+    buffer_size: int = 200_000
+    learning_starts: int = 20_000
+    train_freq: int = 4
 
-    # Target network
-    target_update_freq: int = 1_000  # copy policy → target every N learning steps
+    target_update_freq: int = 2_000
 
-    # Exploration (linear epsilon decay)
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01
-    epsilon_decay_steps: int = 100_000
+    epsilon_decay_steps: int = 250_000 
 
-    # Evaluation
-    eval_freq: int = 10_000  # evaluate every N env steps
+    eval_freq: int = 20_000
     eval_episodes: int = 10
-
-    # Checkpointing
-    checkpoint_freq: int = 50_000  # save every N env steps
-
-    # Video recording
-    video_freq: int = 100_000  # record a gameplay video every N env steps (0 to disable)
-
-    # Environment
+    checkpoint_freq: int = 100_000
+    video_freq: int = 200_000
     env: EnvConfig = field(default_factory=EnvConfig)
 
 
 @dataclass
 class PPOConfig:
-    """PPO hyperparameters — SB3 Atari defaults."""
+    # PPO hyperparameters — SB3 Atari defaults
     total_timesteps: int = 1_000_000
     learning_rate: float = 2.5e-4
     gamma: float = 0.99

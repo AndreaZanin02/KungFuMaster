@@ -11,7 +11,7 @@ from utils import get_git_hash
 
 
 class Logger:
-    """Logs training metrics to CSV and run metadata to JSON."""
+    # Logs training metrics to CSV and run metadata to JSON
 
     def __init__(self, run_dir: Path, config: object) -> None:
         self.run_dir = run_dir
@@ -23,7 +23,7 @@ class Logger:
         self._save_metadata(config)
 
     def _save_metadata(self, config: object) -> None:
-        """Save run metadata: config, library versions, git hash."""
+        # Save run metadata: config, library versions, git hash
         meta = {
             "config": asdict(config),
             "versions": {
@@ -38,7 +38,7 @@ class Logger:
             json.dump(meta, f, indent=2)
 
     def log(self, metrics: dict) -> None:
-        """Append a row of metrics to the CSV file."""
+        # Append a row of metrics to the CSV file
         if self._csv_file is None:
             self._csv_file = open(self.csv_path, "w", newline="")
             self._writer = csv.DictWriter(self._csv_file, fieldnames=list(metrics.keys()))
@@ -48,6 +48,6 @@ class Logger:
         self._csv_file.flush()
 
     def close(self) -> None:
-        """Close the CSV file."""
+        # Close the CSV file
         if self._csv_file is not None:
             self._csv_file.close()
