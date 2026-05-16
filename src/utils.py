@@ -20,18 +20,18 @@ def set_seed(seed: int) -> None:
 
 # --------------- This version of KungFuMasterRewardShaper doesn't implement walking reward ---------------
 """
-    Personalized wrapper for Reward Shaping
-    - Reward Scaling: transforms the points (50, 100, 2000) in useful values (0.5, 1.0, 20.0).
-    - Death Penalty: strong signal of error if the character is hitten
+    Wrapper for Reward Shaping:
+    - Reward Scaling: (ex. 100 points -> 1.0)
+    - Life Penalty: penalty for the death
+    - Time Penalty: little penalty for each step in order to avoid camping
 """
 
-"""
 class KungFuMasterRewardShaper(gym.Wrapper):
-
-    def __init__(self, env: gym.Env, scale_factor: float = 100.0, life_penalty: float = -10.0):
+    def __init__(self, env: gym.Env, scale_factor: float = 100.0, life_penalty: float = -20.0, step_penalty: float = -0.01):
         super().__init__(env)
         self.scale_factor = scale_factor
         self.life_penalty = life_penalty
+        self.step_penalty = step_penalty
         self.current_lives = 0
 
     def reset(self, **kwargs) -> tuple:
@@ -41,21 +41,23 @@ class KungFuMasterRewardShaper(gym.Wrapper):
 
     def step(self, action: int) -> tuple:
         obs, reward, terminated, truncated, info = self.env.step(action)
-
-        # Save the points
+        
+        # Log saving
         info["original_reward"] = reward
 
-        # Reward Scaling
+        # Points scaling
         shaped_reward = reward / self.scale_factor
 
-        # Death Penalty
+        # Time Penalty (-0.01 at each action)
+        shaped_reward += self.step_penalty
+
+        # Lives management
         lives = info.get("lives", self.current_lives)
         if lives < self.current_lives:
             shaped_reward += self.life_penalty
-            self.current_lives = lives
+        self.current_lives = lives
 
         return obs, shaped_reward, terminated, truncated, info
-"""
 
 #---------------- Version of KungFuMasterRewardShaper with spacial rewards --------------------
 """
@@ -63,6 +65,7 @@ class KungFuMasterRewardShaper(gym.Wrapper):
     - Reward Scaling: trasformation of videogame's points
     - Death Penalty: strong signal of error if the character is hitten
     - Scroll Reward (RAM): uses game's RAM informations in order to guide the character in the level
+"""
 """
 class KungFuMasterRewardShaper(gym.Wrapper):
     def __init__(self, env: gym.Env, scale_factor: float = 100.0, life_penalty: float = -10.0, scroll_reward: float = 2.0):
@@ -121,7 +124,7 @@ class KungFuMasterRewardShaper(gym.Wrapper):
                 self.max_cumulative_scroll = self.cumulative_scroll
 
         return obs, shaped_reward, terminated, truncated, info
-
+"""
 def make_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int = 4,
             frame_stack: int = 4, clip_rewards: bool = True) -> gym.Env:
     env = gym.make(env_id, frameskip=1, render_mode=None)
@@ -137,7 +140,7 @@ def make_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int = 4,
     )
 
     if clip_rewards:
-        env = KungFuMasterRewardShaper(env, scale_factor=100.0, life_penalty=-10.0)
+        env = KungFuMasterRewardShaper(env, scale_factor=100.0, life_penalty=-20.0, step_penalty=-0.01)
 
     env = gym.wrappers.FrameStackObservation(env, frame_stack)
     env.reset(seed=seed)

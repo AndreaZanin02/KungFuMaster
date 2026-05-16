@@ -10,7 +10,7 @@ class EnvConfig:
     screen_size: int = 84
     clip_rewards: bool = True
 
-
+"""
 @dataclass
 class DQNConfig:
     total_timesteps: int = 2_000_000
@@ -32,7 +32,38 @@ class DQNConfig:
     checkpoint_freq: int = 100_000
     video_freq: int = 200_000
     env: EnvConfig = field(default_factory=EnvConfig)
+"""
 
+# ------------------------------ Better DQN configuration ----------------------------------
+@dataclass
+class DQNConfig:
+    # Massive timesteps searching for convercence
+    total_timesteps: int = 15_000_000 
+    
+    learning_rate: float = 1e-4
+    gamma: float = 0.99
+    
+    batch_size: int = 128 
+    
+    # Huge buffer size 1milion of frame are about 7-8 GB of RAM
+    buffer_size: int = 1_000_000 
+    
+    # Learning starts point: initial random moves
+    learning_starts: int = 100_000 
+    train_freq: int = 4
+
+    target_update_freq: int = 10_000 
+
+    # 6. Epsilon Decay on 2 milion of steps for a better exploration
+    epsilon_start: float = 1.0
+    epsilon_end: float = 0.05
+    epsilon_decay_steps: int = 2_000_000 
+
+    eval_freq: int = 100_000
+    eval_episodes: int = 10
+    checkpoint_freq: int = 500_000
+    video_freq: int = 500_000
+    env: EnvConfig = field(default_factory=EnvConfig)
 
 @dataclass
 class PPOConfig:
