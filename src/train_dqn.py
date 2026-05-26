@@ -10,17 +10,31 @@ from config import DQNConfig
 from logger import Logger
 from utils import get_device, get_run_dir, make_env, make_eval_env, make_video_env, set_seed
 
-
+# Two fases epsilon decay, it starts after the warmup fase
 def get_epsilon(step: int, cfg: DQNConfig) -> float:
-    """Linear epsilon decay from epsilon_start to epsilon_end over epsilon_decay_steps."""
-    # Linearly interpolate between start and end: 1.0 → 0.01 over epsilon_decay_steps
-    fraction = min(1.0, step / cfg.epsilon_decay_steps)
-    return cfg.epsilon_start + fraction * (cfg.epsilon_end - cfg.epsilon_start)
+    
+    # Avoiding warmup
+    explore_step = max(0, step - cfg.learning_starts)
+    
+    # Fase 1: from epsilon_start to  epsilon_mid
+    if explore_step < cfg.epsilon_decay_phase1:
+        fraction = explore_step / cfg.epsilon_decay_phase1
+        return cfg.epsilon_start - fraction * (cfg.epsilon_start - cfg.epsilon_mid)
+        
+    # Fase 2: from epsilon_mid to epsilon_end 
+    elif explore_step < cfg.epsilon_decay_phase1 + cfg.epsilon_decay_phase2:
+        phase2_step = explore_step - cfg.epsilon_decay_phase1
+        fraction = phase2_step / cfg.epsilon_decay_phase2
+        return cfg.epsilon_mid - fraction * (cfg.epsilon_mid - cfg.epsilon_end)
+        
+    # Fase 3: end fase
+    else:
+        return cfg.epsilon_end
 
 
+# Run n_episodes with greedy policy, return (mean_reward, std_reward)
 def evaluate(agent: DQNAgent, env_id: str, seed: int, n_episodes: int,
              env_cfg_kwargs: dict) -> tuple[float, float]:
-    """Run n_episodes with greedy policy, return (mean_reward, std_reward)."""
     # Use a separate env with different seed, no reward clipping, and real episode boundaries
     eval_env = make_eval_env(env_id, seed=seed + 1000, **env_cfg_kwargs)
     rewards = []
@@ -42,10 +56,9 @@ def evaluate(agent: DQNAgent, env_id: str, seed: int, n_episodes: int,
     eval_env.close()
     return float(np.mean(rewards)), float(np.std(rewards))
 
-
+# Record gameplay videos using the agent's greedy policy
 def record_video(agent: DQNAgent, env_id: str, seed: int, video_dir: str,
                  env_cfg_kwargs: dict, n_episodes: int = 1) -> None:
-    """Record gameplay videos using the agent's greedy policy."""
     vid_env = make_video_env(env_id, seed=seed + 2000, video_dir=video_dir, **env_cfg_kwargs)
 
     for _ in range(n_episodes):
@@ -58,9 +71,8 @@ def record_video(agent: DQNAgent, env_id: str, seed: int, video_dir: str,
 
     vid_env.close()
 
-
+# Main DQN training loop
 def train(cfg: DQNConfig, seed: int) -> None:
-    """Main DQN training loop."""
     set_seed(seed)
     device = get_device()
     run_dir = get_run_dir("runs", "dqn", seed)

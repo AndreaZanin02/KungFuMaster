@@ -8,45 +8,119 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import zlib
 
+# ---------------------- Original replay buffer --------------------------
 """
-Four core components of DQN (Mnih et al., 2015):
-- Q-Network (Policy Network):
-    Neural network that maps game frames to Q-values for every possible action.
-- Target Network:
-    A periodically-updated copy of the Q-Network, used to stabilize TD target computation.
-- Replay Buffer (Experience Replay):
-    Stores past transitions (s, a, r, s', done). Random mini-batches are drawn to break
-    temporal correlation between consecutive frames.
-- Epsilon-Greedy Strategy:
-    Balances exploration (random actions with probability epsilon) and exploitation
-    (greedy w.r.t. Q-values). Epsilon decays over time.
-"""
-
-
+# Fixed-size replay buffer storing transitions as uint8 numpy arrays
 class ReplayBuffer:
-    """Fixed-size replay buffer storing transitions as uint8 numpy arrays."""
 
     def __init__(self, capacity: int) -> None:
         self.buffer: deque = deque(maxlen=capacity)
 
+    # Store a transition. States should be uint8 to save RAM
     def push(self, state: np.ndarray, action: int, reward: float,
              next_state: np.ndarray, done: bool) -> None:
-        """Store a transition. States should be uint8 to save RAM."""
         self.buffer.append((state, action, reward, next_state, done))
 
+    # Sample a random mini-batch to break temporal correlation
     def sample(self, batch_size: int) -> tuple[np.ndarray, ...]:
-        """Sample a random mini-batch to break temporal correlation."""
         batch = random.sample(self.buffer, batch_size)
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
         return state, action, reward, next_state, done
 
     def __len__(self) -> int:
         return len(self.buffer)
+"""
 
+# -------------------- Optimized replay buffer with compression ----------------------
+class ReplayBuffer:
+    def __init__(self, capacity: int, frame_stack: int = 4) -> None:
+        self.capacity = capacity
+        self.frame_stack = frame_stack
+
+        # max_frames is incremented because every reset gives us 4 extra frames
+        self.max_frames = int(capacity * 1.1) + frame_stack
+        self.frames = [None] * self.max_frames
+        
+        # frame_ptr is the absolute index, the wrap is managed by the module operation
+        self.frame_ptr = 0          
+
+        # Transaction structure: (absolute_state_last_idx, action, reward, done)
+        self.transitions = deque()
+
+        self._compress = lambda f: zlib.compress(f.tobytes(), level=1)
+        self._decompress = lambda b, shape: np.frombuffer(
+            zlib.decompress(b), dtype=np.uint8
+        ).reshape(shape)
+
+    def push(self, state: np.ndarray, action: int, reward: float,
+             next_state: np.ndarray, done: bool) -> None:
+        
+        # Saving the starting frames 
+        if len(self.transitions) == 0 or (len(self.transitions) > 0 and self.transitions[-1][3]):
+            for i in range(self.frame_stack):
+                self._write_frame(state[i])
+
+        # Save only the new frame (not all the 4 new frames) and the index
+        new_frame_idx = self._write_frame(next_state[-1])
+        state_last_idx = new_frame_idx - 1
+
+        self.transitions.append((state_last_idx, action, reward, done))
+
+        # Circular memory management logic
+        while self.transitions:
+            oldest_state_last_idx = self.transitions[0][0]
+            
+            # The oldest frame of the transaction
+            oldest_required_frame = oldest_state_last_idx - (self.frame_stack - 1)
+            
+            # If the current index and the oldest frame required from the transaction are farer than
+            # the max dimension of the buffer, il frame has been overwritten
+            is_overwritten = (self.frame_ptr - oldest_required_frame) >= self.max_frames
+            
+            if is_overwritten or len(self.transitions) > self.capacity:
+                self.transitions.popleft()
+            else:
+                break
+
+    def _write_frame(self, frame: np.ndarray) -> int:
+        idx = self.frame_ptr
+        self.frames[idx % self.max_frames] = self._compress(frame)
+        self.frame_ptr += 1
+        return idx
+
+    def _get_state(self, last_frame_idx: int) -> np.ndarray:
+        frames = []
+        for i in range(self.frame_stack - 1, -1, -1):
+            idx = (last_frame_idx - i) % self.max_frames
+            frames.append(self._decompress(self.frames[idx], (84, 84)))
+        return np.stack(frames, axis=0)
+
+    def sample(self, batch_size: int) -> tuple[np.ndarray, ...]:
+        batch = random.sample(self.transitions, batch_size)
+
+        states, actions, rewards, next_states, dones = [], [], [], [], []
+
+        for frame_idx, action, reward, done in batch:
+            states.append(self._get_state(frame_idx))
+            next_states.append(self._get_state(frame_idx + 1))
+            actions.append(action)
+            rewards.append(reward)
+            dones.append(done)
+
+        return (
+            np.stack(states),
+            np.array(actions, dtype=np.int64),
+            np.array(rewards, dtype=np.float32),
+            np.stack(next_states),
+            np.array(dones, dtype=np.float32),
+        )
+
+    def __len__(self) -> int:
+        return len(self.transitions)
 
 class DQN_CNN(nn.Module):
-    """Nature CNN (Mnih et al., 2015) — 3 conv layers + 2 FC layers."""
 
     def __init__(self, input_channels: int, num_actions: int) -> None:
         super().__init__()
@@ -69,9 +143,9 @@ class DQN_CNN(nn.Module):
         x = F.relu(self.fc1(x))
         return self.fc2(x)
 
-
+# DQN agent with target network and epsilon-greedy action selection
 class DQNAgent:
-    """DQN agent with target network and epsilon-greedy action selection."""
+    
 
     def __init__(self, action_dim: int, device: torch.device, input_channels: int = 4,
                 lr: float = 1e-4, gamma: float = 0.99, batch_size: int = 32) -> None:
@@ -88,8 +162,8 @@ class DQNAgent:
 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
 
+    # Epsilon-greedy action selection
     def select_action(self, state: np.ndarray, epsilon: float) -> int:
-        """Epsilon-greedy action selection."""
         if random.random() > epsilon:
             with torch.no_grad():
                 state_t = torch.tensor(state, dtype=torch.uint8, device=self.device).unsqueeze(0)
@@ -97,8 +171,8 @@ class DQNAgent:
                 return q_values.max(1)[1].item()
         return random.randrange(self.action_dim)
 
+    # Run one gradient step on a mini-batch from the replay buffer
     def learn(self, memory: ReplayBuffer) -> Optional[float]:
-        """Run one gradient step on a mini-batch from the replay buffer."""
         if len(memory) < self.batch_size:
             return None
 
@@ -130,20 +204,22 @@ class DQNAgent:
 
         return loss.item()
 
+    # Copy weights from policy network to target network
     def update_target_network(self) -> None:
-        # Copy weights from policy network to target network
+        
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
+    # Save agent state to disk
     def save(self, path: Path) -> None:
-        # Save agent state to disk
+        
         torch.save({
             "policy_net": self.policy_net.state_dict(),
             "target_net": self.target_net.state_dict(),
             "optimizer": self.optimizer.state_dict(),
         }, path)
 
+    # Load agent state from disk
     def load(self, path: Path) -> None:
-        # Load agent state from disk
         checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         self.policy_net.load_state_dict(checkpoint["policy_net"])
         self.target_net.load_state_dict(checkpoint["target_net"])
