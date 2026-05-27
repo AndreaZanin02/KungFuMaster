@@ -60,38 +60,50 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         return obs, shaped_reward, terminated, truncated, info
 """
 
-#---------------- Version of KungFuMasterRewardShaper with spacial rewards --------------------
+#---------------- Version of KungFuMasterRewardShaper with spacial and life rewards --------------------
 """
     Wrapper for Reward Shaping:
     - Reward Scaling: transforms game points (es. 100 -> 1.0)
     - Life Penalty: dying is bad
+    - Health Penalty: hits are bad
     - Time Penalty: avoiding camping
     - Explore Reward: reward if the agent is moving from the spawn point
 """
 class KungFuMasterRewardShaper(gym.Wrapper):
-    def __init__(self, env: gym.Env, scale_factor: float = 100.0, life_penalty: float = -20.0, step_penalty: float = -0.01, explore_reward: float = 0.005):
+    def __init__(self, env: gym.Env, scale_factor: float = 100.0, life_penalty: float = -20.0, 
+                 step_penalty: float = -0.01, explore_reward: float = 0.005,
+                 health_penalty: float = -0.5):
         super().__init__(env)
         self.scale_factor = scale_factor
         self.life_penalty = life_penalty
         self.step_penalty = step_penalty
         self.explore_reward = explore_reward
+        self.health_penalty = health_penalty
         self.current_lives = 0
         
-        # Spatial tracking (RAM[124] is the real X coordinate)
+        # Spatial tracking (RAM[124])
         self.x_byte_idx = 124
         self.last_x = 0
         self.cumulative_x = 0
         self.max_abs_x = 0
+        
+        # Health tracking (RAM[81])
+        self.health_byte_idx = 81
+        self.last_health = 0
 
     def reset(self, **kwargs) -> tuple:
         obs, info = self.env.reset(**kwargs)
         self.current_lives = info.get("lives", 0)
         
-        # Spawn point
         ram = self.env.unwrapped.ale.getRAM()
+        
+        # Spawn point
         self.last_x = int(ram[self.x_byte_idx])
         self.cumulative_x = 0
         self.max_abs_x = 0
+        
+        # Reset salute
+        self.last_health = int(ram[self.health_byte_idx])
         
         return obs, info
 
@@ -107,20 +119,32 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         # Time
         shaped_reward += self.step_penalty
 
+        ram = self.env.unwrapped.ale.getRAM()
+
         # Death
         lives = info.get("lives", self.current_lives)
         if lives < self.current_lives:
             shaped_reward += self.life_penalty
             self.current_lives = lives
             
-            # Reset of the spawn after death
-            ram = self.env.unwrapped.ale.getRAM()
+            # Reset of the spawn and health after death
             self.last_x = int(ram[self.x_byte_idx])
             self.cumulative_x = 0
             self.max_abs_x = 0
+            self.last_health = int(ram[self.health_byte_idx])
         else:
-            # Exploration
-            ram = self.env.unwrapped.ale.getRAM()
+            # Health logic
+            current_health = int(ram[self.health_byte_idx])
+            
+            # If the current health is less than the previous value we have received a damage
+            if current_health < self.last_health:
+                damage_taken = self.last_health - current_health
+                # More damage more penalties
+                shaped_reward += (damage_taken * self.health_penalty)
+            
+            # Update helth for consistency after respawn
+            self.last_health = current_health
+
             current_x = int(ram[self.x_byte_idx])
             
             # Overflow management
@@ -133,16 +157,10 @@ class KungFuMasterRewardShaper(gym.Wrapper):
             self.last_x = current_x
             self.cumulative_x += diff
             
-            # Level 1 (left) -> cumulative_x gets positive 
-            # Level 2 (right) -> cumulative_x gets negative. So we use abs()
-            abs_distance = abs(self.cumulative_x)
-            
-            # Reward only for unseen space (of the current life)
-            if abs_distance > self.max_abs_x:
-                # Reward are correlated to the distance walked
-                step_progress = abs_distance - self.max_abs_x
+            if self.cumulative_x > self.max_abs_x:
+                step_progress = self.cumulative_x - self.max_abs_x
                 shaped_reward += (step_progress * self.explore_reward)
-                self.max_abs_x = abs_distance
+                self.max_abs_x = self.cumulative_x
 
         return obs, shaped_reward, terminated, truncated, info
 
