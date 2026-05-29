@@ -34,6 +34,7 @@ class ReplayBuffer:
 """
 
 # -------------------- Optimized replay buffer with compression ----------------------
+"""
 class ReplayBuffer:
     def __init__(self, capacity: int, frame_stack: int = 4) -> None:
         self.capacity = capacity
@@ -119,6 +120,89 @@ class ReplayBuffer:
 
     def __len__(self) -> int:
         return len(self.transitions)
+"""
+
+# --------------------- Pre-allocated circular buffer no compression ----------------------
+class ReplayBuffer:
+    def __init__(self, capacity: int, frame_stack: int = 4) -> None:
+        self.capacity = capacity
+        self.frame_stack = frame_stack
+
+        # max_frames is incremented because every reset gives us 4 extra frames
+        self.max_frames = int(capacity * 1.1) + frame_stack
+        
+        # Pre-allocation of the memory
+        self.frames = np.empty((self.max_frames, 84, 84), dtype=np.uint8)
+        
+        # frame_ptr is the absolute index, the wrap is managed by the module operation
+        self.frame_ptr = 0          
+
+        # Transaction structure: (absolute_state_last_idx, action, reward, done)
+        self.transitions = deque()
+
+    def push(self, state: np.ndarray, action: int, reward: float,
+             next_state: np.ndarray, done: bool) -> None:
+        
+        # Saving the starting frames 
+        if len(self.transitions) == 0 or (len(self.transitions) > 0 and self.transitions[-1][3]):
+            for i in range(self.frame_stack):
+                self._write_frame(state[i])
+
+        # Save only the new frame (not all the 4 new frames) and the index
+        new_frame_idx = self._write_frame(next_state[-1])
+        state_last_idx = new_frame_idx - 1
+
+        self.transitions.append((state_last_idx, action, reward, done))
+
+        # Circular memory management logic
+        while self.transitions:
+            oldest_state_last_idx = self.transitions[0][0]
+            
+            # The oldest frame of the transaction
+            oldest_required_frame = oldest_state_last_idx - (self.frame_stack - 1)
+            
+            # If the current index and the oldest frame required from the transaction are farer than
+            # the max dimension of the buffer, il frame has been overwritten
+            is_overwritten = (self.frame_ptr - oldest_required_frame) >= self.max_frames
+            
+            if is_overwritten or len(self.transitions) > self.capacity:
+                self.transitions.popleft()
+            else:
+                break
+
+    def _write_frame(self, frame: np.ndarray) -> int:
+        idx = self.frame_ptr
+        self.frames[idx % self.max_frames] = frame
+        self.frame_ptr += 1
+        return idx
+
+    def _get_state(self, last_frame_idx: int) -> np.ndarray:
+        # Advanced numpy indexes
+        indices = [(last_frame_idx - i) % self.max_frames for i in range(self.frame_stack - 1, -1, -1)]
+        return self.frames[indices]
+
+    def sample(self, batch_size: int) -> tuple[np.ndarray, ...]:
+        batch = random.sample(self.transitions, batch_size)
+
+        states, actions, rewards, next_states, dones = [], [], [], [], []
+
+        for frame_idx, action, reward, done in batch:
+            states.append(self._get_state(frame_idx))
+            next_states.append(self._get_state(frame_idx + 1))
+            actions.append(action)
+            rewards.append(reward)
+            dones.append(done)
+
+        return (
+            np.stack(states),
+            np.array(actions, dtype=np.int64),
+            np.array(rewards, dtype=np.float32),
+            np.stack(next_states),
+            np.array(dones, dtype=np.float32),
+        )
+
+    def __len__(self) -> int:
+        return len(self.transitions)
 
 class DQN_CNN(nn.Module):
 
@@ -129,7 +213,7 @@ class DQN_CNN(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
 
-        # After convolutions: (Batch, 64, 7, 7) → flatten → 3136
+        # After convolutions: (Batch, 64, 7, 7) -> flatten -> 3136
         self.fc1 = nn.Linear(64 * 7 * 7, 512)
         self.fc2 = nn.Linear(512, num_actions)
 
@@ -172,7 +256,8 @@ class DQNAgent:
         return random.randrange(self.action_dim)
 
     # Run one gradient step on a mini-batch from the replay buffer
-    def learn(self, memory: ReplayBuffer) -> Optional[float]:
+    # type hint aggiornato: restituisce una tupla (loss, q_mean)
+    def learn(self, memory: ReplayBuffer) -> Optional[tuple[float, float]]:
         if len(memory) < self.batch_size:
             return None
 
@@ -202,7 +287,8 @@ class DQNAgent:
         nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=10.0)
         self.optimizer.step()
 
-        return loss.item()
+        # Log informations
+        return loss.item(), curr_q.mean().item()
 
     # Copy weights from policy network to target network
     def update_target_network(self) -> None:

@@ -77,7 +77,7 @@ class DQNConfig:
     batch_size: int = 128 
     
     # Avoiding swap on disk (max 16 GB RAM)
-    buffer_size: int = 1_000_000   
+    buffer_size: int = 750_000   
     
     # learning_starts for the new buffer
     learning_starts: int = 80_000  
@@ -87,12 +87,12 @@ class DQNConfig:
 
     # Epsilon
     epsilon_start: float = 1.0
-    epsilon_mid: float = 0.1 
+    epsilon_mid: float = 0.15 
     epsilon_end: float = 0.01
     # Aggressive exploration
-    epsilon_decay_phase1: int = 1_500_000 
+    epsilon_decay_phase1: int = 2_500_000 
     # Long fine tuning
-    epsilon_decay_phase2: int = 3_500_000
+    epsilon_decay_phase2: int = 5_000_000
 
     eval_freq: int = 100_000
     eval_episodes: int = 10

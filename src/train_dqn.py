@@ -13,21 +13,21 @@ from utils import get_device, get_run_dir, make_env, make_eval_env, make_video_e
 # Two fases epsilon decay, it starts after the warmup fase
 def get_epsilon(step: int, cfg: DQNConfig) -> float:
     
-    # Avoiding warmup
+    # Avoiding warmup epsilon decay
     explore_step = max(0, step - cfg.learning_starts)
     
-    # Fase 1: from epsilon_start to  epsilon_mid
+    # From epsilon_start to  epsilon_mid
     if explore_step < cfg.epsilon_decay_phase1:
         fraction = explore_step / cfg.epsilon_decay_phase1
         return cfg.epsilon_start - fraction * (cfg.epsilon_start - cfg.epsilon_mid)
         
-    # Fase 2: from epsilon_mid to epsilon_end 
+    # From epsilon_mid to epsilon_end 
     elif explore_step < cfg.epsilon_decay_phase1 + cfg.epsilon_decay_phase2:
         phase2_step = explore_step - cfg.epsilon_decay_phase1
         fraction = phase2_step / cfg.epsilon_decay_phase2
         return cfg.epsilon_mid - fraction * (cfg.epsilon_mid - cfg.epsilon_end)
         
-    # Fase 3: end fase
+    # End fase
     else:
         return cfg.epsilon_end
 
@@ -110,6 +110,10 @@ def train(cfg: DQNConfig, seed: int) -> None:
     best_eval_reward = -float("inf")
     start_time = time.time()
 
+    # List for log informations
+    episode_losses = []
+    episode_q_vals = []
+
     for step in range(1, cfg.total_timesteps + 1):
         epsilon = get_epsilon(step, cfg)
         action = agent.select_action(np.array(obs), epsilon)
@@ -127,9 +131,13 @@ def train(cfg: DQNConfig, seed: int) -> None:
         episode_true_score += info.get("original_reward", 0.0) 
         episode_length += 1
 
-        if step >= cfg.learning_starts and step % cfg.train_freq == 0:
-            loss = agent.learn(memory)
-            if loss is not None:
+        if len(memory) >= cfg.learning_starts and step % cfg.train_freq == 0:
+            learn_result = agent.learn(memory)
+            if learn_result is not None:
+                loss, q_val = learn_result
+                episode_losses.append(loss)
+                episode_q_vals.append(q_val)
+                
                 learn_steps += 1
                 if learn_steps % cfg.target_update_freq == 0:
                     agent.update_target_network()
@@ -139,29 +147,43 @@ def train(cfg: DQNConfig, seed: int) -> None:
             elapsed = time.time() - start_time
             fps = step / elapsed if elapsed > 0 else 0
 
+            # Calculating mean values
+            avg_loss = float(np.mean(episode_losses)) if episode_losses else 0.0
+            avg_q = float(np.mean(episode_q_vals)) if episode_q_vals else 0.0
+
+            # Saving CSV
             logger.log({
                 "step": step,
                 "episode": episode_count,
                 "episode_reward": episode_true_score,
+                "episode_shaped_reward": episode_shaped_reward,
                 "episode_length": episode_length,
                 "epsilon": round(epsilon, 4),
                 "fps": round(fps, 1),
+                "avg_loss": round(avg_loss, 4),
+                "avg_q": round(avg_q, 4)
             })
 
+            # Printing
             if episode_count % 10 == 0:
                 print(
                     f"Step {step:>8d}/{cfg.total_timesteps} | "
                     f"Ep {episode_count:>4d} | "
                     f"Score Reale {episode_true_score:>7.0f} | "
                     f"Reward Rete {episode_shaped_reward:>7.1f} | "
+                    f"Loss {avg_loss:>6.4f} | "
+                    f"Q-Med {avg_q:>6.3f} | "
                     f"Eps {epsilon:.3f} | "
                     f"FPS {fps:.0f}"
                 )
 
+            # Reset at the end of the episode
             obs, _ = env.reset()
             episode_shaped_reward = 0.0
             episode_true_score = 0.0
             episode_length = 0
+            episode_losses.clear()
+            episode_q_vals.clear()
 
         # Test the agent with no exploration to measure true performance
         if step % cfg.eval_freq == 0:
@@ -182,13 +204,13 @@ def train(cfg: DQNConfig, seed: int) -> None:
         if cfg.video_freq > 0 and step % cfg.video_freq == 0:
             video_dir = str(run_dir / "videos" / f"step_{step:08d}")
             record_video(agent, cfg.env.env_id, seed, video_dir, env_cfg_kwargs)
-            print(f"  [VIDEO] Recorded gameplay at step {step} → {video_dir}")
+            print(f"Recorded gameplay at step {step} → {video_dir}")
 
     agent.save(run_dir / "final_model.pt")
     if cfg.video_freq > 0:
         video_dir = str(run_dir / "videos" / "final")
         record_video(agent, cfg.env.env_id, seed, video_dir, env_cfg_kwargs)
-        print(f"  [VIDEO] Final gameplay recorded → {video_dir}")
+        print(f"Final gameplay recorded → {video_dir}")
     logger.close()
     env.close()
     print(f"Training complete. Best eval reward: {best_eval_reward:.1f}")
