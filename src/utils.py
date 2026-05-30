@@ -76,6 +76,8 @@ class KungFuPreprocessing(gym.Wrapper):
                 obs_buffer.append(obs)
                 
             if done or truncated:
+                if len(obs_buffer) == 0:
+                    obs_buffer.append(obs)
                 break
                 
         if len(obs_buffer) == 2:
@@ -183,6 +185,10 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         # Death check
         if current_lives < self.last_lives or (self.last_lives == 0 and current_lives == 255):
             shaped_reward += self.death_penalty
+
+            # The episode of training ends with the first death of the agent, avoiding
+            # that he learns to exploit checkpoint bug to farm minions
+            terminated = True 
 
         # Check respawn
         if current_health > self.last_health:  
