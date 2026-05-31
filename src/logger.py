@@ -2,16 +2,14 @@ import csv
 import json
 from dataclasses import asdict
 from pathlib import Path
-
 import gymnasium
 import numpy as np
 import torch
-
 from utils import get_git_hash
 
 
+# --------------------- Logs training metrics ---------------------
 class Logger:
-    """Logs training metrics to CSV and run metadata to JSON."""
 
     def __init__(self, run_dir: Path, config: object) -> None:
         self.run_dir = run_dir
@@ -19,11 +17,12 @@ class Logger:
         self.meta_path = run_dir / "metadata.json"
         self._csv_file = None
         self._writer = None
-
         self._save_metadata(config)
 
+
+    # Save run metadata: config, library versions, git hash
     def _save_metadata(self, config: object) -> None:
-        """Save run metadata: config, library versions, git hash."""
+        
         meta = {
             "config": asdict(config),
             "versions": {
@@ -37,8 +36,10 @@ class Logger:
         with open(self.meta_path, "w") as f:
             json.dump(meta, f, indent=2)
 
+
+    # Append a row of metrics to the CSV file
     def log(self, metrics: dict) -> None:
-        """Append a row of metrics to the CSV file."""
+        
         if self._csv_file is None:
             self._csv_file = open(self.csv_path, "w", newline="")
             self._writer = csv.DictWriter(self._csv_file, fieldnames=list(metrics.keys()))
@@ -47,7 +48,9 @@ class Logger:
         self._writer.writerow(metrics)
         self._csv_file.flush()
 
+
+    # Close the CSV file
     def close(self) -> None:
-        """Close the CSV file."""
+        
         if self._csv_file is not None:
             self._csv_file.close()

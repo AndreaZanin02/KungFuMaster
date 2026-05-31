@@ -1,18 +1,16 @@
-"""Standalone evaluation script for trained DQN agents."""
+# Standalone evaluation script for trained DQN agents
 
 import argparse
 import json
 from pathlib import Path
-
 import gymnasium as gym
 import numpy as np
-
 from agent import DQNAgent
 from utils import get_device, make_eval_env, set_seed
 
 
+# Run n_episodes with greedy policy, return per-episode metrics
 def evaluate(agent: DQNAgent, env: gym.Env, n_episodes: int) -> list[dict]:
-    """Run n_episodes with greedy policy, return per-episode metrics."""
     episodes = []
 
     for i in range(n_episodes):
@@ -43,6 +41,16 @@ def evaluate(agent: DQNAgent, env: gym.Env, n_episodes: int) -> list[dict]:
         print(f"  Episode {i + 1}/{n_episodes}: reward = {episode_reward:.1f}, length = {episode_length}")
 
     return episodes
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Evaluate a trained DQN agent")
+    parser.add_argument("run_dir", type=str, help="Path to run directory (e.g. runs/dqn/seed_42)")
+    parser.add_argument("--model-name", type=str, default="best_model.pt",
+                        help="Model filename inside run_dir (default: best_model.pt)")
+    parser.add_argument("--episodes", type=int, default=30, help="Number of evaluation episodes")
+    parser.add_argument("--seed", type=int, default=100, help="Eval seed (should differ from training seed)")
+    return parser.parse_args()
 
 
 def main() -> None:
@@ -137,16 +145,6 @@ def main() -> None:
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to {results_path}")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate a trained DQN agent")
-    parser.add_argument("run_dir", type=str, help="Path to run directory (e.g. runs/dqn/seed_42)")
-    parser.add_argument("--model-name", type=str, default="best_model.pt",
-                        help="Model filename inside run_dir (default: best_model.pt)")
-    parser.add_argument("--episodes", type=int, default=30, help="Number of evaluation episodes")
-    parser.add_argument("--seed", type=int, default=100, help="Eval seed (should differ from training seed)")
-    return parser.parse_args()
 
 
 if __name__ == "__main__":

@@ -1,26 +1,38 @@
-"""DQN training script for ALE/KungFuMaster-v5."""
-
 import argparse
 import time
-
+import torch
 import numpy as np
-
 from agent import DQNAgent, ReplayBuffer
 from config import DQNConfig
 from logger import Logger
 from utils import get_device, get_run_dir, make_env, make_eval_env, make_video_env, set_seed
 
 
+# Two phases epsilon decay, it starts after the warmup phase
 def get_epsilon(step: int, cfg: DQNConfig) -> float:
-    """Linear epsilon decay from epsilon_start to epsilon_end over epsilon_decay_steps."""
-    # Linearly interpolate between start and end: 1.0 → 0.01 over epsilon_decay_steps
-    fraction = min(1.0, step / cfg.epsilon_decay_steps)
-    return cfg.epsilon_start + fraction * (cfg.epsilon_end - cfg.epsilon_start)
+    
+    # Avoiding warmup epsilon decay
+    explore_step = max(0, step - cfg.learning_starts)
+    
+    # From epsilon_start to  epsilon_mid
+    if explore_step < cfg.epsilon_decay_phase1:
+        fraction = explore_step / cfg.epsilon_decay_phase1
+        return cfg.epsilon_start - fraction * (cfg.epsilon_start - cfg.epsilon_mid)
+        
+    # From epsilon_mid to epsilon_end 
+    elif explore_step < cfg.epsilon_decay_phase1 + cfg.epsilon_decay_phase2:
+        phase2_step = explore_step - cfg.epsilon_decay_phase1
+        fraction = phase2_step / cfg.epsilon_decay_phase2
+        return cfg.epsilon_mid - fraction * (cfg.epsilon_mid - cfg.epsilon_end)
+        
+    # End phase
+    else:
+        return cfg.epsilon_end
 
 
+# Run n_episodes with greedy policy, return (mean_reward, std_reward)
 def evaluate(agent: DQNAgent, env_id: str, seed: int, n_episodes: int,
              env_cfg_kwargs: dict) -> tuple[float, float]:
-    """Run n_episodes with greedy policy, return (mean_reward, std_reward)."""
     # Use a separate env with different seed, no reward clipping, and real episode boundaries
     eval_env = make_eval_env(env_id, seed=seed + 1000, **env_cfg_kwargs)
     rewards = []
@@ -43,9 +55,9 @@ def evaluate(agent: DQNAgent, env_id: str, seed: int, n_episodes: int,
     return float(np.mean(rewards)), float(np.std(rewards))
 
 
+# Record gameplay videos using the agent's greedy policy
 def record_video(agent: DQNAgent, env_id: str, seed: int, video_dir: str,
                  env_cfg_kwargs: dict, n_episodes: int = 1) -> None:
-    """Record gameplay videos using the agent's greedy policy."""
     vid_env = make_video_env(env_id, seed=seed + 2000, video_dir=video_dir, **env_cfg_kwargs)
 
     for _ in range(n_episodes):
@@ -59,8 +71,8 @@ def record_video(agent: DQNAgent, env_id: str, seed: int, video_dir: str,
     vid_env.close()
 
 
+# ----------------------- Main DQN training loop ----------------------
 def train(cfg: DQNConfig, seed: int) -> None:
-    """Main DQN training loop."""
     set_seed(seed)
     device = get_device()
     run_dir = get_run_dir("runs", "dqn", seed)
@@ -88,94 +100,165 @@ def train(cfg: DQNConfig, seed: int) -> None:
     )
     memory = ReplayBuffer(cfg.buffer_size)
     logger = Logger(run_dir, cfg)
-
-    obs, _ = env.reset()
-    episode_reward = 0.0
-    episode_length = 0
+    
+    start_step = 1
     episode_count = 0
+    best_eval_reward = -float("inf")
+
+    checkpoint_path = run_dir / "resume_checkpoint.pt"
+    if checkpoint_path.exists():
+        print(f"\n[RESUME] Found checkpoint: {checkpoint_path}")
+        print("Loading the status of models and counters...")
+        
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        # Network Recovery and Optimizer
+        agent.policy_net.load_state_dict(checkpoint["policy_net"])
+        agent.target_net.load_state_dict(checkpoint["target_net"])
+        agent.optimizer.load_state_dict(checkpoint["optimizer"])
+        
+        # Resetting loop variables (resume from the next step)
+        start_step = checkpoint["step"] + 1
+        episode_count = checkpoint["episode_count"]
+        best_eval_reward = checkpoint["best_eval_reward"]
+        
+        print(f"Recovery complete. Resuming from Step {start_step} (Episode {episode_count})\n")
+
+    # Environment reset
+    obs, _ = env.reset()
+    episode_shaped_reward = 0.0  
+    episode_true_score = 0.0
+    episode_length = 0
     learn_steps = 0
-    best_eval_reward = -float("inf")  # any first eval will be a "new best"
     start_time = time.time()
 
-    for step in range(1, cfg.total_timesteps + 1):
-        # Decide how much to explore at this point in training
-        epsilon = get_epsilon(step, cfg)
-        action = agent.select_action(np.array(obs), epsilon)
+    # List for log informations
+    episode_losses = []
+    episode_q_vals = []
 
-        next_obs, reward, terminated, truncated, _ = env.step(action)
-        done = terminated or truncated
+    try:
+        for step in range(start_step, cfg.total_timesteps + 1):
+            epsilon = get_epsilon(step, cfg)
+            action = agent.select_action(np.array(obs), epsilon)
 
-        # Store transition in replay buffer for later learning
-        memory.push(np.array(obs), action, reward, np.array(next_obs), done)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
 
-        obs = next_obs
-        episode_reward += reward
-        episode_length += 1
+            memory.push(np.array(obs), action, reward, np.array(next_obs), done)
+            obs = next_obs
+            
+            episode_shaped_reward += reward
+            episode_true_score += info.get("original_reward", 0.0) 
+            episode_length += 1
 
-        # Wait until buffer has enough variety, then learn every train_freq steps
-        if step >= cfg.learning_starts and step % cfg.train_freq == 0:
-            loss = agent.learn(memory)
-            if loss is not None:
-                learn_steps += 1
+            if len(memory) >= cfg.learning_starts and step % cfg.train_freq == 0:
+                batch = memory.sample(cfg.batch_size)
+                learn_result = agent.learn(batch)
+                if learn_result is not None:
+                    loss, q_val = learn_result
+                    episode_losses.append(loss)
+                    episode_q_vals.append(q_val)
+                    
+                    learn_steps += 1
+                    if learn_steps % cfg.target_update_freq == 0:
+                        agent.update_target_network()
 
-                # Sync target network periodically to keep TD targets stable
-                if learn_steps % cfg.target_update_freq == 0:
-                    agent.update_target_network()
+            if done:
+                episode_count += 1
+                elapsed = time.time() - start_time
+                fps = step / elapsed if elapsed > 0 else 0
 
-        # When the agent dies, log metrics and reset for the next episode
-        if done:
-            episode_count += 1
-            elapsed = time.time() - start_time
-            fps = step / elapsed if elapsed > 0 else 0
+                # Calculating mean values
+                avg_loss = float(np.mean(episode_losses)) if episode_losses else 0.0
+                avg_q = float(np.mean(episode_q_vals)) if episode_q_vals else 0.0
 
-            logger.log({
-                "step": step,
-                "episode": episode_count,
-                "episode_reward": episode_reward,
-                "episode_length": episode_length,
-                "epsilon": round(epsilon, 4),
-                "fps": round(fps, 1),
-            })
+                # Saving CSV
+                logger.log({
+                    "step": step,
+                    "episode": episode_count,
+                    "episode_reward": episode_true_score,
+                    "episode_shaped_reward": episode_shaped_reward,
+                    "episode_length": episode_length,
+                    "epsilon": round(epsilon, 4),
+                    "fps": round(fps, 1),
+                    "avg_loss": round(avg_loss, 4),
+                    "avg_q": round(avg_q, 4)
+                })
 
-            if episode_count % 10 == 0:
-                print(
-                    f"Step {step:>8d}/{cfg.total_timesteps} | "
-                    f"Ep {episode_count:>4d} | "
-                    f"Reward {episode_reward:>7.1f} | "
-                    f"Eps {epsilon:.3f} | "
-                    f"FPS {fps:.0f}"
-                )
+                # Printing
+                if episode_count % 10 == 0:
+                    print(
+                        f"Step {step:>8d}/{cfg.total_timesteps} | "
+                        f"Ep {episode_count:>4d} | "
+                        f"Score Reale {episode_true_score:>7.0f} | "
+                        f"Reward Rete {episode_shaped_reward:>7.1f} | "
+                        f"Loss {avg_loss:>6.4f} | "
+                        f"Q-Med {avg_q:>6.3f} | "
+                        f"Eps {epsilon:.3f} | "
+                        f"FPS {fps:.0f}"
+                    )
+                
+                obs, _ = env.reset()
+                episode_shaped_reward = 0.0
+                episode_true_score = 0.0
+                episode_length = 0
+                episode_losses.clear()
+                episode_q_vals.clear()
 
-            obs, _ = env.reset()
-            episode_reward = 0.0
-            episode_length = 0
+            if step % cfg.eval_freq == 0:
+                print(f"\n--- EVALUATION (Step {step}) ---")
+                mean_r, std_r = evaluate(agent, cfg.env.env_id, seed, cfg.eval_episodes, env_cfg_kwargs)
+                print(f"Result Eval: Mean Reward = {mean_r:.1f} +/- {std_r:.1f}")
+                
+                if mean_r > best_eval_reward:
+                    print(f"New BEST MODEL found! (Reward: {best_eval_reward:.1f} -> {mean_r:.1f}). Saving...")
+                    best_eval_reward = mean_r
+                    agent.save(run_dir / "best_model.pt")
+                else:
+                    print(f"No improvement (Current Best: {best_eval_reward:.1f})")
+                
 
-        # Test the agent with no exploration to measure true performance
-        if step % cfg.eval_freq == 0:
-            mean_r, std_r = evaluate(agent, cfg.env.env_id, seed, cfg.eval_episodes, env_cfg_kwargs)
-            print(f"  [EVAL] Step {step} | Mean reward: {mean_r:.1f} +/- {std_r:.1f}")
+            if step % cfg.checkpoint_freq == 0:
+                agent.save(run_dir / f"checkpoint_{step:08d}.pt")
 
-            # Save the best model since RL training is noisy and the final model isn't always the best
-            if mean_r > best_eval_reward:
-                best_eval_reward = mean_r
-                agent.save(run_dir / "best_model.pt")
-                print(f"  [EVAL] New best model saved (reward={mean_r:.1f})")
+            # Checkpoints every 100k steps
+            if step % 100000 == 0:
+                torch.save({
+                    "policy_net": agent.policy_net.state_dict(),
+                    "target_net": agent.target_net.state_dict(),
+                    "optimizer": agent.optimizer.state_dict(),
+                    "step": step,
+                    "episode_count": episode_count,
+                    "best_eval_reward": best_eval_reward
+                }, checkpoint_path)
+                print(f"Recovery file '{checkpoint_path.name}' updated at the step {step}.")
 
-        # Save periodic checkpoint as insurance against crashes
-        if step % cfg.checkpoint_freq == 0:
-            agent.save(run_dir / f"checkpoint_{step:08d}.pt")
+            if cfg.video_freq > 0 and step % cfg.video_freq == 0:
+                video_dir = str(run_dir / "videos" / f"step_{step:08d}")
+                record_video(agent, cfg.env.env_id, seed, video_dir, env_cfg_kwargs)
 
-        # Record a video to visually track how the agent's strategy evolves
-        if cfg.video_freq > 0 and step % cfg.video_freq == 0:
-            video_dir = str(run_dir / "videos" / f"step_{step:08d}")
-            record_video(agent, cfg.env.env_id, seed, video_dir, env_cfg_kwargs)
-            print(f"  [VIDEO] Recorded gameplay at step {step} → {video_dir}")
+    # Manual saving at ctrl+C
+    except KeyboardInterrupt:
+        print("\n\nCtrl+C detected! Saving resume checkpoint...")
+        torch.save({
+            "policy_net": agent.policy_net.state_dict(),
+            "target_net": agent.target_net.state_dict(),
+            "optimizer": agent.optimizer.state_dict(),
+            "step": step,
+            "episode_count": episode_count,
+            "best_eval_reward": best_eval_reward
+        }, checkpoint_path)
+        print(f"Successfully saved at step {step}. Closing environments...")
+        logger.close()
+        env.close()
+        return
 
+    # End of the training
     agent.save(run_dir / "final_model.pt")
     if cfg.video_freq > 0:
         video_dir = str(run_dir / "videos" / "final")
         record_video(agent, cfg.env.env_id, seed, video_dir, env_cfg_kwargs)
-        print(f"  [VIDEO] Final gameplay recorded → {video_dir}")
+        print(f"Final gameplay recorded → {video_dir}")
     logger.close()
     env.close()
     print(f"Training complete. Best eval reward: {best_eval_reward:.1f}")

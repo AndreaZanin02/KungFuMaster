@@ -1,0 +1,35 @@
+{
+  "config": {
+    "total_timesteps": 15000000,
+    "learning_rate": 0.0001,
+    "gamma": 0.99,
+    "batch_size": 128,
+    "buffer_size": 3000000,
+    "learning_starts": 80000,
+    "train_freq": 4,
+    "target_update_freq": 2500,
+    "epsilon_start": 1.0,
+    "epsilon_mid": 0.1,
+    "epsilon_end": 0.01,
+    "epsilon_decay_phase1": 2000000,
+    "epsilon_decay_phase2": 8000000,
+    "eval_freq": 100000,
+    "eval_episodes": 10,
+    "checkpoint_freq": 500000,
+    "video_freq": 500000,
+    "env": {
+      "env_id": "ALE/KungFuMaster-v5",
+      "frame_stack": 4,
+      "frame_skip": 4,
+      "screen_size": 84,
+      "clip_rewards": true
+    }
+  },
+  "versions": {
+    "torch": "2.1.0a0+41361538.nv23.06",
+    "gymnasium": "1.1.1",
+    "numpy": "1.24.4"
+  },
+  "git_hash": "unknown",
+  "device": "Orin"
+}
