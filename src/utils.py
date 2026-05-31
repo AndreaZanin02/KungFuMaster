@@ -9,6 +9,7 @@ import cv2
 
 gym.register_envs(ale_py)
 
+
 # Seed all RNGs for reproducibility
 def set_seed(seed: int) -> None:
     random.seed(seed)
@@ -17,6 +18,7 @@ def set_seed(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
 
 # Reducing noise deleting not playable areas
 class MaskFasciaGioco(gym.ObservationWrapper):
@@ -32,21 +34,25 @@ class MaskFasciaGioco(gym.ObservationWrapper):
         
         return obs
 
+
+# -------------------------- Custom Pre-Processing Pipeline -------------------------
 class KungFuPreprocessing(gym.Wrapper):
+
     def __init__(self, env: gym.Env, frame_skip: int = 4, noop_max: int = 30, screen_size: int = 84):
         super().__init__(env)
         self.frame_skip = frame_skip
         self.noop_max = noop_max
         self.screen_size = screen_size
         
-        self.knife_color = np.array([74, 74, 74], dtype=np.uint8) 
+        self.knife_color = np.array([74, 74, 74], dtype=np.uint8)
         self.kernel = np.ones((3, 3), np.uint8)
         
         self.observation_space = gym.spaces.Box(
             low=0, high=255, shape=(screen_size, screen_size), dtype=np.uint8
         )
 
-    def reset(self, **kwargs) -> tuple:
+
+    def reset(self, **kwargs) -> tuple[np.ndarray, dict]:
         obs, info = self.env.reset(**kwargs)
         
         # Noop reset anti overfitting
@@ -58,7 +64,8 @@ class KungFuPreprocessing(gym.Wrapper):
         
         return self._process_obs(obs), info
 
-    def step(self, action: int) -> tuple:
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         total_reward = 0.0
         done = False
         truncated = False
@@ -87,6 +94,7 @@ class KungFuPreprocessing(gym.Wrapper):
             
         return self._process_obs(max_obs), total_reward, done, truncated, info
 
+
     # Utility for extracting RGB modify image without resize it
     def get_intermediate_rgb(self, obs: np.ndarray) -> np.ndarray:
         # Copy
@@ -103,6 +111,7 @@ class KungFuPreprocessing(gym.Wrapper):
         
         return obs_highlighted
 
+
     def _process_obs(self, obs: np.ndarray) -> np.ndarray:
         # Processing RGB pixels
         obs_highlighted = self.get_intermediate_rgb(obs)
@@ -113,6 +122,8 @@ class KungFuPreprocessing(gym.Wrapper):
         
         return resized
 
+
+# ---------------------------- Reward Shaper ------------------------------
 class KungFuMasterRewardShaper(gym.Wrapper):
     def __init__(self, env: gym.Env, scale_factor: float = 1000.0, #base enemy is +0.2 or +0.1
                  step_penalty: float = -0.005, 
@@ -145,6 +156,7 @@ class KungFuMasterRewardShaper(gym.Wrapper):
 
         self.safe_zone = False
 
+
     def reset(self, **kwargs) -> tuple:
         obs, info = self.env.reset(**kwargs)
         ram = self.env.unwrapped.ale.getRAM()
@@ -157,6 +169,7 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         self.safe_zone = False
         return obs, info
 
+    # Reward logic
     def step(self, action: int) -> tuple:
         obs, reward, terminated, truncated, info = self.env.step(action)
         info["original_reward"] = reward
@@ -185,10 +198,7 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         # Death check
         if current_lives < self.last_lives or (self.last_lives == 0 and current_lives == 255):
             shaped_reward += self.death_penalty
-
-            # The episode of training ends with the first death of the agent, avoiding
-            # that he learns to exploit checkpoint bug to farm minions
-            terminated = True 
+            terminated = True
 
         # Check respawn
         if current_health > self.last_health:  
@@ -214,6 +224,7 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         return obs, shaped_reward, terminated, truncated, info
 
 
+# Training environment
 def make_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int = 4,
             frame_stack: int = 4, clip_rewards: bool = True) -> gym.Env:
     # Creation of game environment
@@ -249,6 +260,7 @@ def make_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int = 4,
     return env
 
 
+# Evaluation environment
 def make_eval_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int = 4,
                 frame_stack: int = 4) -> gym.Env:
     # Same environment of the training
@@ -266,6 +278,7 @@ def make_eval_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int
     return env
 
 
+# Video environment (render_mode RGB)
 def make_video_env(env_id: str, seed: int, video_dir: str, screen_size: int = 84,
                     frame_skip: int = 4, frame_stack: int = 4) -> gym.Env:
     # Same environment but render_mode="rgb_array" for recording video

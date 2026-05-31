@@ -1,24 +1,31 @@
-"""Plot training curves from CSV log files."""
-
 import argparse
 from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 
+# ----------------- Plot training curves from CSV log files ------------------
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Plot training curves from run logs")
+    parser.add_argument("--runs-dir", type=str, default="runs", help="Base runs directory")
+    parser.add_argument("--algorithms", nargs="+", default=["dqn"], help="Algorithms to plot (e.g. dqn ppo)")
+    parser.add_argument("--window", type=int, default=10, help="Smoothing window size")
+    parser.add_argument("--no-show", action="store_true", help="Save only, don't display")
+    return parser.parse_args()
+
+
+# Simple moving average for smoother curves
 def smooth(values: np.ndarray, window: int = 10) -> np.ndarray:
-    # Simple moving average for smoother curves
     if len(values) < window:
         return values
     kernel = np.ones(window) / window
     return np.convolve(values, kernel, mode="valid")
 
 
+# Plot episode rewards from a single seed's metrics.csv
 def plot_single_seed(csv_path: Path, ax: plt.Axes, label: str, color: str,
                     window: int = 10) -> None:
-    Plot episode rewards from a single seed's metrics.csv
     df = pd.read_csv(csv_path)
     rewards = df["episode_reward"].values
     steps = df["step"].values
@@ -33,9 +40,9 @@ def plot_single_seed(csv_path: Path, ax: plt.Axes, label: str, color: str,
     )
 
 
+# Plot mean +/- std reward across multiple seeds for one algorithm
 def plot_multi_seed(run_dirs: list[Path], algorithm: str, ax: plt.Axes, color: str,
                     window: int = 10) -> None:
-    Plot mean +/- std reward across multiple seeds for one algorithm
     all_rewards = []
     min_len = float("inf")
 
@@ -102,15 +109,6 @@ def main() -> None:
 
     if not args.no_show:
         plt.show()
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot training curves from run logs")
-    parser.add_argument("--runs-dir", type=str, default="runs", help="Base runs directory")
-    parser.add_argument("--algorithms", nargs="+", default=["dqn"], help="Algorithms to plot (e.g. dqn ppo)")
-    parser.add_argument("--window", type=int, default=10, help="Smoothing window size")
-    parser.add_argument("--no-show", action="store_true", help="Save only, don't display")
-    return parser.parse_args()
 
 
 if __name__ == "__main__":

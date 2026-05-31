@@ -1,16 +1,17 @@
 from dataclasses import dataclass, field
 
 
+# Shared environment configuration
 @dataclass
 class EnvConfig:
-    # Shared environment configuration
     env_id: str = "ALE/KungFuMaster-v5"
     frame_stack: int = 4
     frame_skip: int = 4
     screen_size: int = 84
     clip_rewards: bool = True
 
-# ------------------------------ Starting tests DQN configuration ----------------------------------
+
+# ------------------------------ Fast test DQN configuration ----------------------------------
 """
 @dataclass
 class DQNConfig:
@@ -35,40 +36,9 @@ class DQNConfig:
     env: EnvConfig = field(default_factory=EnvConfig)
 """
 
-# ------------------------------ Better DQN configuration ----------------------------------
+
+# ---------------------- Laptop 16 GB ram DQN configuration ------------------------
 """
-@dataclass
-class DQNConfig:
-
-    total_timesteps: int = 15_000_000 
-    
-    learning_rate: float = 1e-4
-    gamma: float = 0.99
-    
-    batch_size: int = 128 
-    
-    # Huge buffer size (56 GB ram needed --> each state is composed from 4 frame 84x84: 4*84*84=28.224 byte)
-    buffer_size: int = 1_000_000 
-    
-    # Learning starts point: initial random moves
-    learning_starts: int = 100_000 
-    train_freq: int = 4
-
-    target_update_freq: int = 10_000 
-
-    # 6. Epsilon Decay on 2 milion of steps for a better exploration
-    epsilon_start: float = 1.0
-    epsilon_end: float = 0.05
-    epsilon_decay_steps: int = 2_000_000 
-
-    eval_freq: int = 100_000
-    eval_episodes: int = 10
-    checkpoint_freq: int = 500_000
-    video_freq: int = 500_000
-    env: EnvConfig = field(default_factory=EnvConfig)
-"""
-
-# ---------------------- Laptop DQN configuration with optimization ------------------------
 @dataclass
 class DQNConfig:
     total_timesteps: int = 15_000_000 
@@ -87,10 +57,10 @@ class DQNConfig:
 
     # Epsilon
     epsilon_start: float = 1.0
-    epsilon_mid: float = 0.15 
+    epsilon_mid: float = 0.10 
     epsilon_end: float = 0.01
     # Aggressive exploration
-    epsilon_decay_phase1: int = 2_500_000 
+    epsilon_decay_phase1: int = 500_000 
     # Long fine tuning
     epsilon_decay_phase2: int = 5_000_000
 
@@ -99,7 +69,43 @@ class DQNConfig:
     checkpoint_freq: int = 500_000
     video_freq: int = 500_000
     env: EnvConfig = field(default_factory=EnvConfig)
+"""
 
+
+# -------------------------- Desktop computer 64Gb ram DQN configuration ------------------------------
+@dataclass
+class DQNConfig:
+    total_timesteps: int = 15_000_000 
+    learning_rate: float = 1e-4
+    gamma: float = 0.99
+    batch_size: int = 128 
+    
+    # No problem of swap on disk
+    buffer_size: int = 3_000_000   
+    
+    # learning_starts for the new buffer
+    learning_starts: int = 80_000  
+    
+    train_freq: int = 4
+    target_update_freq: int = 2500 
+
+    # Epsilon
+    epsilon_start: float = 1.0
+    epsilon_mid: float = 0.10 
+    epsilon_end: float = 0.01
+    # Aggressive exploration
+    epsilon_decay_phase1: int = 2_000_000 
+    # Long fine tuning
+    epsilon_decay_phase2: int = 8_000_000
+
+    eval_freq: int = 100_000
+    eval_episodes: int = 10
+    checkpoint_freq: int = 500_000
+    video_freq: int = 500_000
+    env: EnvConfig = field(default_factory=EnvConfig)
+
+
+# ------------------------------ Fast test PPO configuration ----------------------------------
 @dataclass
 class PPOConfig:
     # PPO hyperparameters — SB3 Atari defaults

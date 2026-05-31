@@ -30,11 +30,6 @@ checkpoints/
 logs/
 *.tfevents.*
 
-# Datasets and Video recordings
-*.mp4
-*.mkv
-recordings/
-
 # OS and IDE files
 .DS_Store
 .vscode/
