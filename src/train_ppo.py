@@ -26,17 +26,28 @@ def make_monitored_env(env_id: str, seed: int, idx: int, env_cfg_kwargs: dict):
 
 
 class CSVLoggerCallback(BaseCallback):
-    """Logs per-episode metrics to CSV in the same format as DQN, so
-    plot_results.py works without modification."""
+    """Logs per-episode metrics matching DQN's CSV schema.
+    Tracks both the raw game score (via info['original_reward'] from
+    KungFuMasterRewardShaper) and the shaped reward (what PPO learned from)."""
 
-    def __init__(self, logger: Logger):
+    def __init__(self, csv_logger: Logger):
         super().__init__()
-        self.csv_logger = logger
+        self.csv_logger = csv_logger
         self.episode_count = 0
         self.start_time = time.time()
+        self.env_raw_score = None  # per-env accumulator, initialised on training start
+
+    def _on_training_start(self) -> None:
+        n_envs = self.training_env.num_envs
+        self.env_raw_score = np.zeros(n_envs, dtype=np.float64)
 
     def _on_step(self) -> bool:
-        for info in self.locals.get("infos", []):
+        infos = self.locals.get("infos", [])
+        for i, info in enumerate(infos):
+            # Accumulate raw, unshaped game score from KungFuMasterRewardShaper
+            self.env_raw_score[i] += info.get("original_reward", 0.0)
+
+            # On episode end, log everything and reset accumulator for this env
             if "episode" in info:
                 self.episode_count += 1
                 elapsed = time.time() - self.start_time
@@ -44,11 +55,13 @@ class CSVLoggerCallback(BaseCallback):
                 self.csv_logger.log({
                     "step": self.num_timesteps,
                     "episode": self.episode_count,
-                    "episode_reward": float(info["episode"]["r"]),
+                    "episode_reward": float(self.env_raw_score[i]),       # raw game score
+                    "episode_shaped_reward": float(info["episode"]["r"]), # shaped (PPO's signal)
                     "episode_length": int(info["episode"]["l"]),
                     "epsilon": 0.0,
                     "fps": round(fps, 1),
                 })
+                self.env_raw_score[i] = 0.0
         return True
 
 
