@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 
 
-# Shared environment configuration
 @dataclass
 class EnvConfig:
+    # Shared environment configuration
     env_id: str = "ALE/KungFuMaster-v5"
     frame_stack: int = 4
     frame_skip: int = 4
@@ -105,11 +105,11 @@ class DQNConfig:
     env: EnvConfig = field(default_factory=EnvConfig)
 
 
-# ------------------------------ Fast test PPO configuration ----------------------------------
+# ------------------------------ PPO configuration ----------------------------------
 @dataclass
 class PPOConfig:
     # PPO hyperparameters — SB3 Atari defaults
-    total_timesteps: int = 1_000_000
+    total_timesteps: int = 15_000_000
     learning_rate: float = 2.5e-4
     gamma: float = 0.99
     n_steps: int = 128
@@ -120,13 +120,14 @@ class PPOConfig:
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     n_envs: int = 8
+    video_freq: int = 500_000
 
     # Evaluation
-    eval_freq: int = 10_000
+    eval_freq: int = 100_000
     eval_episodes: int = 10
 
     # Checkpointing
-    checkpoint_freq: int = 50_000
+    checkpoint_freq: int = 100_000
 
     # Environment
     env: EnvConfig = field(default_factory=EnvConfig)

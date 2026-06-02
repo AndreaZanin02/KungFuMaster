@@ -177,6 +177,9 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         # Costant step penalty
         shaped_reward = self.step_penalty
 
+        # Kill scaled reward
+        shaped_reward += (reward / self.scale_factor)
+
         ram = self.env.unwrapped.ale.getRAM()
         current_health = int(ram[self.health_byte_idx])
         current_milestone = int(ram[self.milestone_byte_idx])
@@ -186,8 +189,7 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         # Completed level
         if info["original_reward"] >= 2000:
             self.safe_zone = True
-            shaped_reward += self.level_clear_reward
-            shaped_reward += (reward / self.scale_factor) 
+            shaped_reward += self.level_clear_reward 
 
         # Boss damage reward
         if current_boss_health < self.last_boss_health:
@@ -224,10 +226,10 @@ class KungFuMasterRewardShaper(gym.Wrapper):
         return obs, shaped_reward, terminated, truncated, info
 
 
-# Training environment
+# Training environment: reward_kwargs attribute accepts different reward shapes
 def make_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int = 4,
-            frame_stack: int = 4, clip_rewards: bool = True) -> gym.Env:
-    # Creation of game environment
+            frame_stack: int = 4, clip_rewards: bool = True, reward_kwargs: dict = None) -> gym.Env:
+    
     env = gym.make(env_id, frameskip=1, render_mode=None, repeat_action_probability=0.0)
 
     # Custom AtariPreprocessing
@@ -242,19 +244,24 @@ def make_env(env_id: str, seed: int, screen_size: int = 84, frame_skip: int = 4,
     env = MaskFasciaGioco(env)
     
     if clip_rewards:
-        env = KungFuMasterRewardShaper(
-            env, 
-            scale_factor = 1000.0, #base enemy is +0.2 or +0.1
-            step_penalty = -0.005, 
-            base_explore_reward = 0.5,
-            milestone_bonus = 0.2,
-            health_penalty = -0.1, 
-            death_penalty = -3.0,
-            level_clear_reward = 25.0,
-            boss_dmg_reward = 0.1
-        )
+        # Default per DQN
+        default_reward_cfg = {
+            "scale_factor": 1000.0,
+            "step_penalty": -0.005,
+            "base_explore_reward": 0.5,
+            "milestone_bonus": 0.2,
+            "health_penalty": -0.1,
+            "death_penalty": -3.0,
+            "level_clear_reward": 25.0,
+            "boss_dmg_reward": 0.1
+        }
+        
+        # Overwrite rewards (used in train_ppo.py for example)
+        if reward_kwargs is not None:
+            default_reward_cfg.update(reward_kwargs)
 
-    # Temporal stack of frames
+        env = KungFuMasterRewardShaper(env, **default_reward_cfg)
+
     env = gym.wrappers.FrameStackObservation(env, frame_stack)
     env.reset(seed=seed)
     return env
