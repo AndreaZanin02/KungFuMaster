@@ -1,7 +1,7 @@
 # Kung-Fu Master RL: Deep Q-Network & PPO
 
-https://github.com/AndreaZanin02/KungFuMaster/blob/main/results/DQN/gameplay.mp4
-
+<video src="https://github.com/AndreaZanin02/KungFuMaster/raw/main/results/DQN/gameplay.mp4" autoplay loop muted playsinline></video
+                                                                                                                                
 Deep Reinforcement Learning project focused on mastering the Atari 2600 classic **Kung-Fu Master** (`ALE/KungFuMaster-v5`).
 This repository features a fully custom Double-DQN implementation and a parallelized PPO setup via Stable-Baselines3. 
 
@@ -17,10 +17,10 @@ The core of this project goes beyond standard environment wrappers: it includes 
 ## Usage
 1. Clone the repository:
    ```bash
-   git clone [https://github.com/AndreaZanin02/KungFuMaster.git](https://github.com/AndreaZanin02/KungFuMaster.git)
+   git clone https://github.com/AndreaZanin02/KungFuMaster.git
    ```
 2. Install requirements:
-  ```bash
+   ```bash
    cd KungFuMaster
    pip install -r requirements.txt
    ```
@@ -56,5 +56,3 @@ To help the CNN focus on lethal threats, `TEST_FramePreprocessing.py` validates 
 * `config.py`: Dataclasses holding hyperparameters for hardware-specific constraints (Fast testing, 16GB RAM, 64GB RAM).
 * `logger.py` / `plot_results.py`: Tools for tracking metrics and visualizing training curves.
 * `TEST_*.py`: Diagnostic scripts for manual RAM debugging and visual pipeline testing.
-
-   
