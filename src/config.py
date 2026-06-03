@@ -11,34 +11,7 @@ class EnvConfig:
     clip_rewards: bool = True
 
 
-# ------------------------------ Fast test DQN configuration ----------------------------------
-"""
-@dataclass
-class DQNConfig:
-    total_timesteps: int = 2_000_000
-    learning_rate: float = 0.0000625
-    gamma: float = 0.99
-    batch_size: int = 128
-    buffer_size: int = 200_000
-    learning_starts: int = 20_000
-    train_freq: int = 4
-
-    target_update_freq: int = 2_000
-
-    epsilon_start: float = 1.0
-    epsilon_end: float = 0.01
-    epsilon_decay_steps: int = 250_000 
-
-    eval_freq: int = 20_000
-    eval_episodes: int = 10
-    checkpoint_freq: int = 100_000
-    video_freq: int = 200_000
-    env: EnvConfig = field(default_factory=EnvConfig)
-"""
-
-
 # ---------------------- Laptop 16 GB ram DQN configuration ------------------------
-"""
 @dataclass
 class DQNConfig:
     total_timesteps: int = 15_000_000 
@@ -60,7 +33,7 @@ class DQNConfig:
     epsilon_mid: float = 0.10 
     epsilon_end: float = 0.01
     # Aggressive exploration
-    epsilon_decay_phase1: int = 500_000 
+    epsilon_decay_phase1: int = 1_000_000 
     # Long fine tuning
     epsilon_decay_phase2: int = 5_000_000
 
@@ -69,10 +42,10 @@ class DQNConfig:
     checkpoint_freq: int = 500_000
     video_freq: int = 500_000
     env: EnvConfig = field(default_factory=EnvConfig)
-"""
 
 
 # -------------------------- Desktop computer 64Gb ram DQN configuration ------------------------------
+"""
 @dataclass
 class DQNConfig:
     total_timesteps: int = 15_000_000 
@@ -103,6 +76,7 @@ class DQNConfig:
     checkpoint_freq: int = 500_000
     video_freq: int = 500_000
     env: EnvConfig = field(default_factory=EnvConfig)
+"""
 
 
 # ------------------------------ PPO configuration ----------------------------------
