@@ -1,0 +1,8 @@
+Metric,DQN,PPO,P-Value,Winner / Notes
+Mean Reward,21916.00,10312.00,-,-
+Std Deviation,5429.60,5108.45,-,-
+Max Reward,27500.00,19000.00,-,-
+
+Shapiro-Wilk (Normality),NOT Normal,NOT Normal,DQN: 3.1649e-09 | PPO: 3.2443e-08,-
+Welch's t-test,-,-,1.4568e-18,DQN
+Mann-Whitney U Test,-,-,2.0996e-11,DQN
