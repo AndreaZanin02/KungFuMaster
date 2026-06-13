@@ -1,6 +1,6 @@
 # Kung-Fu Master RL: Deep Q-Network & PPO
 
-![Demo del progetto](assets/gif_README.gif)
+<img width="190" height="240" alt="Image" src="https://github.com/user-attachments/assets/9f4e1ddf-be7e-4765-b6e0-d37bbc033805" />
 
 Deep Reinforcement Learning project focused on mastering the Atari 2600 classic **Kung-Fu Master** (`ALE/KungFuMaster-v5`).
 This repository features a fully custom Double-DQN implementation and a parallelized PPO setup via Stable-Baselines3. 
